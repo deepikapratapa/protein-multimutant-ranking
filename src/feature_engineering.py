@@ -31,22 +31,22 @@ Sequence & simple biophysics:
     - blosum62 (substitution score)
     - is_gly, is_pro, is_to_gly, is_to_pro (binary flags)
     - env: pH, temp_C (if present)
-    - label: ddg_exp_kcal
 
-Stubs (optional hooks; no external runs performed here):
-    - attach_dssp_features(df, dssp_dir)
-    - attach_naccess_features(df, naccess_dir)
-    - attach_foldx_ddg(df, foldx_csv)
+Structure (if DSSP / NACCESS are available):
+    - ss_coarse (E/H/C)
+    - ss_idx (0 = strand, 1 = helix, 2 = coil)
+    - ss_H, ss_E, ss_C (one-hot)
+    - asa (absolute solvent accessible area)
+    - asa_norm (per-chain normalized ASA)
+    - is_buried (asa < 30 Å²)
+    - is_exposed (asa > 80 Å²)
+    - asa_rel, asa_abs (from NACCESS, if present)
+    - ddg_foldx (from FoldX, if provided)
 
-CLI
----
-python -m src.feature_engineering \
-    --in data/processed/single_mut_clean.csv \
-    --out data/processed/features_basic.csv \
-    --dssp_dir path/to/dssp_csvs  \
-    --naccess_dir path/to/naccess_csvs \
-    --foldx path/to/foldx_single_mut.csv
+Label:
+    - ddg_exp_kcal
 """
+
 from __future__ import annotations
 
 import argparse
@@ -119,7 +119,8 @@ _BLOSUM62 = [
     [-2,-2,-2,-3,-2,-1,-2,-3, 2,-1,-1,-2,-1, 3,-3,-2,-2, 2, 7,-1], # Y
     [ 0,-3,-3,-3,-1,-2,-2,-3,-3, 3, 1,-2, 1,-1,-2,-2, 0,-3,-1, 4], # V
 ]
-B62 = {r:{c:v for c,v in zip(_BLOSUM62_ROWS,row)} for r,row in zip(_BLOSUM62_ROWS,_BLOSUM62)}
+B62 = {r: {c: v for c, v in zip(_BLOSUM62_ROWS, row)}
+       for r, row in zip(_BLOSUM62_ROWS, _BLOSUM62)}
 
 # -------------------------------
 # Core feature functions
@@ -131,9 +132,10 @@ def _safe_map(letter: str, table: dict[str, float]) -> float:
     letter = str(letter).upper()
     return table.get(letter, np.nan)
 
+
 def compute_basic_sequence_features(df: pd.DataFrame) -> pd.DataFrame:
     """Add sequence/biochem features; expects wt, mut, res_index present."""
-    if not {"wt","mut","res_index"}.issubset(df.columns):
+    if not {"wt", "mut", "res_index"}.issubset(df.columns):
         raise ValueError("DataFrame must contain columns: wt, mut, res_index")
 
     out = df.copy()
@@ -162,7 +164,8 @@ def compute_basic_sequence_features(df: pd.DataFrame) -> pd.DataFrame:
             return np.nan
         w, m = str(w).upper(), str(m).upper()
         return B62.get(w, {}).get(m, np.nan)
-    out["blosum62"] = [blosum_score(w,m) for w,m in zip(out["wt"], out["mut"])]
+
+    out["blosum62"] = [blosum_score(w, m) for w, m in zip(out["wt"], out["mut"])]
 
     # simple flags
     out["is_gly"] = (out["wt"] == "G").astype(int)
@@ -171,23 +174,23 @@ def compute_basic_sequence_features(df: pd.DataFrame) -> pd.DataFrame:
     out["is_to_pro"] = (out["mut"] == "P").astype(int)
 
     # keep env if present
-    for col in ["pH","temp_C"]:
+    for col in ["pH", "temp_C"]:
         if col in out.columns:
             out[col] = out[col]
 
     return out
 
 # -------------------------------
-# Optional stubs (no external IO here)
+# Optional stubs + structural features
 # -------------------------------
 
 def attach_dssp_features(df: pd.DataFrame, dssp_dir: Path | None) -> pd.DataFrame:
     """
-    Merge DSSP per-residue features (e.g., SS, ASA, phi/psi) if CSVs exist.
+    Merge DSSP per-residue features (e.g., SS, ASA) if CSVs exist.
 
     Expected per-protein file pattern (customize as needed):
         {dssp_dir}/{pdb_id}_{chain}_dssp.csv with columns:
-            res_index, ss(H/E/C or DSSP codes), asa
+            res_index, ss (DSSP code), asa
 
     This function performs a left-join on (pdb_id, chain, res_index).
     """
@@ -219,12 +222,14 @@ def attach_dssp_features(df: pd.DataFrame, dssp_dir: Path | None) -> pd.DataFram
     # normalize column names
     dssp_all.columns = [c.strip().lower() for c in dssp_all.columns]
     if "res_index" not in dssp_all.columns and "resid" in dssp_all.columns:
-        dssp_all = dssp_all.rename(columns={"resid":"res_index"})
-    keep = [c for c in dssp_all.columns if c in {"pdb_id","chain","res_index","ss","asa"}]
+        dssp_all = dssp_all.rename(columns={"resid": "res_index"})
+    keep = [c for c in dssp_all.columns
+            if c in {"pdb_id", "chain", "res_index", "ss", "asa"}]
     dssp_all = dssp_all[keep].copy()
 
-    merged = df.merge(dssp_all, on=["pdb_id","chain","res_index"], how="left")
+    merged = df.merge(dssp_all, on=["pdb_id", "chain", "res_index"], how="left")
     return merged
+
 
 def attach_naccess_features(df: pd.DataFrame, naccess_dir: Path | None) -> pd.DataFrame:
     """
@@ -260,12 +265,14 @@ def attach_naccess_features(df: pd.DataFrame, naccess_dir: Path | None) -> pd.Da
     acc_all = pd.concat(rows, ignore_index=True)
     acc_all.columns = [c.strip().lower() for c in acc_all.columns]
     if "res_index" not in acc_all.columns and "resid" in acc_all.columns:
-        acc_all = acc_all.rename(columns={"resid":"res_index"})
-    keep = [c for c in acc_all.columns if c in {"pdb_id","chain","res_index","asa_rel","asa_abs"}]
+        acc_all = acc_all.rename(columns={"resid": "res_index"})
+    keep = [c for c in acc_all.columns
+            if c in {"pdb_id", "chain", "res_index", "asa_rel", "asa_abs"}]
     acc_all = acc_all[keep].copy()
 
-    merged = df.merge(acc_all, on=["pdb_id","chain","res_index"], how="left")
+    merged = df.merge(acc_all, on=["pdb_id", "chain", "res_index"], how="left")
     return merged
+
 
 def attach_foldx_ddg(df: pd.DataFrame, foldx_csv: Path | None) -> pd.DataFrame:
     """
@@ -286,16 +293,70 @@ def attach_foldx_ddg(df: pd.DataFrame, foldx_csv: Path | None) -> pd.DataFrame:
     fdx = pd.read_csv(foldx_csv)
     fdx.columns = [c.strip().lower() for c in fdx.columns]
     # normalize expected columns
-    ren = {"delta_delta_g":"ddg_foldx", "ddg":"ddg_foldx", "mut_aa":"mut"}
+    ren = {"delta_delta_g": "ddg_foldx", "ddg": "ddg_foldx", "mut_aa": "mut"}
     fdx = fdx.rename(columns=ren)
-    needed = {"pdb_id","chain","res_index","wt","mut","ddg_foldx"}
+    needed = {"pdb_id", "chain", "res_index", "wt", "mut", "ddg_foldx"}
     missing = needed - set(fdx.columns)
     if missing:
         print(f"[WARN] FoldX CSV missing columns: {missing}")
         return df
 
-    merged = df.merge(fdx[list(needed)], on=["pdb_id","chain","res_index","wt","mut"], how="left")
+    merged = df.merge(fdx[list(needed)],
+                      on=["pdb_id", "chain", "res_index", "wt", "mut"],
+                      how="left")
     return merged
+
+
+def compute_structural_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Derive engineered structural features from DSSP / NACCESS columns.
+
+    Expects columns (if available):
+        - ss  (DSSP code)
+        - asa (absolute ASA)
+        - asa_rel, asa_abs (from NACCESS)
+    """
+    out = df.copy()
+
+    # --- Secondary structure: map DSSP codes to coarse classes + one-hot ---
+    if "ss" in out.columns:
+        # ensure string and strip spaces
+        out["ss"] = out["ss"].astype(str).str.strip()
+
+        # Map full DSSP codes to coarse E/H/C
+        dssp_to_coarse = {
+            "H": "H", "G": "H", "I": "H",   # helices
+            "E": "E", "B": "E",             # strands
+            "T": "C", "S": "C", " ": "C",   # coil / turn / bend / blank
+        }
+        out["ss_coarse"] = out["ss"].map(lambda s: dssp_to_coarse.get(s, "C"))
+
+        ss_idx_map = {"E": 0, "H": 1, "C": 2}
+        out["ss_idx"] = out["ss_coarse"].map(ss_idx_map).astype("Int64")
+
+        # One-hot
+        out["ss_H"] = (out["ss_coarse"] == "H").astype(int)
+        out["ss_E"] = (out["ss_coarse"] == "E").astype(int)
+        out["ss_C"] = (out["ss_coarse"] == "C").astype(int)
+
+    # --- ASA based features ---
+    if "asa" in out.columns:
+        out["asa"] = pd.to_numeric(out["asa"], errors="coerce")
+
+        # Normalize ASA per (pdb_id, chain) if available
+        if {"pdb_id", "chain"}.issubset(out.columns):
+            out["asa_norm"] = out.groupby(["pdb_id", "chain"])["asa"].transform(
+                lambda x: x / x.max() if x.max() > 0 else x
+            )
+        else:
+            max_asa = out["asa"].max()
+            out["asa_norm"] = out["asa"] / max_asa if max_asa and max_asa > 0 else out["asa"]
+
+        # Simple buried / exposed flags (cutoffs can be tuned)
+        out["is_buried"] = (out["asa"] < 30).astype(int)
+        out["is_exposed"] = (out["asa"] > 80).astype(int)
+
+    return out
 
 # -------------------------------
 # Orchestrator
@@ -308,24 +369,61 @@ def build_features(
     naccess_dir: Path | None = None,
     foldx_csv: Path | None = None,
 ) -> pd.DataFrame:
-    """Load clean CSV, compute basic features, attach optional ones, save to out."""
+    """Load clean CSV, compute basic + structural features, save to out."""
     df = pd.read_csv(inp)
     # tolerate both schemas: if original 'mut_aa' exists, rename to 'mut'
     if "mut" not in df.columns and "mut_aa" in df.columns:
-        df = df.rename(columns={"mut_aa":"mut"})
+        df = df.rename(columns={"mut_aa": "mut"})
 
     basic = compute_basic_sequence_features(df)
     basic = attach_dssp_features(basic, dssp_dir)
     basic = attach_naccess_features(basic, naccess_dir)
     basic = attach_foldx_ddg(basic, foldx_csv)
+    basic = compute_structural_features(basic)
 
     # choose final columns
-    base_cols = [c for c in ["clid","pdb_id","chain","wt","res_index","mut","ddg_exp_kcal","pH","temp_C"] if c in basic.columns]
+    base_cols = [
+        c
+        for c in [
+            "clid",
+            "pdb_id",
+            "chain",
+            "wt",
+            "res_index",
+            "mut",
+            "ddg_exp_kcal",
+            "pH",
+            "temp_C",
+        ]
+        if c in basic.columns
+    ]
+
     feat_cols = [
-        "pos","delta_hydropathy","delta_charge","delta_volume","delta_polarity",
-        "blosum62","is_gly","is_pro","is_to_gly","is_to_pro",
-        # optional attached features if present:
-    ] + [c for c in ["ss","asa","asa_rel","asa_abs","ddg_foldx"] if c in basic.columns]
+        "pos",
+        "delta_hydropathy",
+        "delta_charge",
+        "delta_volume",
+        "delta_polarity",
+        "blosum62",
+        "is_gly",
+        "is_pro",
+        "is_to_gly",
+        "is_to_pro",
+        # structural / physics features (only kept if present)
+        "ss_idx",
+        "ss_H",
+        "ss_E",
+        "ss_C",
+        "asa",
+        "asa_norm",
+        "is_buried",
+        "is_exposed",
+        "asa_rel",
+        "asa_abs",
+        "ddg_foldx",
+    ]
+
+    feat_cols = [c for c in feat_cols if c in basic.columns]
 
     final = basic[base_cols + feat_cols].copy()
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -339,16 +437,46 @@ def build_features(
 
 def _parse_args(argv=None):
     p = argparse.ArgumentParser(description="Protein ΔΔG feature engineering")
-    p.add_argument("--in", dest="inp", required=True, type=Path, help="Input clean CSV (e.g., data/processed/single_mut_clean.csv)")
-    p.add_argument("--out", dest="out", required=True, type=Path, help="Output CSV (e.g., data/processed/features_basic.csv)")
-    p.add_argument("--dssp_dir", type=Path, default=None, help="Optional: directory of DSSP per-chain CSVs")
-    p.add_argument("--naccess_dir", type=Path, default=None, help="Optional: directory of NACCESS per-chain CSVs")
-    p.add_argument("--foldx", dest="foldx_csv", type=Path, default=None, help="Optional: FoldX single-mutant CSV")
+    p.add_argument(
+        "--in",
+        dest="inp",
+        required=True,
+        type=Path,
+        help="Input clean CSV (e.g., data/processed/single_mut_clean.csv)",
+    )
+    p.add_argument(
+        "--out",
+        dest="out",
+        required=True,
+        type=Path,
+        help="Output CSV (e.g., data/processed/features_basic.csv)",
+    )
+    p.add_argument(
+        "--dssp_dir",
+        type=Path,
+        default=None,
+        help="Optional: directory of DSSP per-chain CSVs",
+    )
+    p.add_argument(
+        "--naccess_dir",
+        type=Path,
+        default=None,
+        help="Optional: directory of NACCESS per-chain CSVs",
+    )
+    p.add_argument(
+        "--foldx",
+        dest="foldx_csv",
+        type=Path,
+        default=None,
+        help="Optional: FoldX single-mutant CSV",
+    )
     return p.parse_args(argv)
+
 
 def main(argv=None):
     args = _parse_args(argv)
     build_features(args.inp, args.out, args.dssp_dir, args.naccess_dir, args.foldx_csv)
+
 
 if __name__ == "__main__":
     sys.exit(main())

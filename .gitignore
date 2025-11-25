@@ -1,0 +1,28 @@
+# ---- OS junk ----
+.DS_Store
+data/.DS_Store
+
+# ---- Jupyter notebook checkpoints ----
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# ---- Python cache ----
+__pycache__/
+*.pyc
+
+# ---- Large structure files (can be regenerated) ----
+data/raw/pdb/
+data/raw/dssp/
+data/raw/.ipynb_checkpoints/
+
+# DSSP-derived per-residue tables (can be rebuilt)
+data/processed/dssp/
+
+# ---- Model artifacts / plots (reproducible) ----
+results/models_structural/
+results/models/
+*.pkl
+*.png
+
+# ---- Huge CCD file for DSSP ----
+components.cif
