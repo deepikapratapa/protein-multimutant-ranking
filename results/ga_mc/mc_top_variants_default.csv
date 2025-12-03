@@ -1,0 +1,2 @@
+protein_id,mutations,pretty_sites,num_mutations,predicted_ddg,method
+1EY0A,1EY0A:22T>G;1EY0A:34F>A;1EY0A:36L>A,22T>G;34F>A;36L>A,3,-4.285846977513229,MC
