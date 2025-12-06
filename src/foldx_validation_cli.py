@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import List
 
 import pandas as pd
+import time
 
 
 # ---------- Helpers ----------
@@ -338,6 +339,7 @@ def main():
 
     # 2) Group by protein_id (you currently have only 1EY0A, but this is future-proof)
     for protein_id, group in df_sorted.groupby("protein_id"):
+        start_t = time.time_ns()
         print(f"\n[Protein] {protein_id}")
 
         protein_id = protein_id[:len(protein_id)-1]
@@ -390,6 +392,7 @@ def main():
         sub = group.iloc[:n].copy()
         sub["ddg_foldx"] = ddgs[:n]
         sub["ddg_diff_model_minus_foldx"] = sub["predicted_ddg"] - sub["ddg_foldx"]
+        sub["time_taken"] = time.time_ns() - start_t
         all_results.append(sub)
 
     if not all_results:

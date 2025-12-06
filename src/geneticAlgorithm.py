@@ -365,7 +365,10 @@ def repair_individual(
 # GA core
 # -------------------------------------------------------------------
 
+import time
+
 def run_ga(args):
+    start_t = time.time_ns()
     outdir = os.path.join("results", "ga_mc")
     ensure_dir(outdir)
 
@@ -640,6 +643,8 @@ def run_ga(args):
 
     print(f"Saved GA convergence plot: {ga_plot_path}")
     print(f"Saved GA top variants:     {top_path}")
+
+    print(f"Total time for Genetic Algo: {(time.time_ns()-start_t)/10**9} seconds")
 
     return ga_plot_path, top_path
 
