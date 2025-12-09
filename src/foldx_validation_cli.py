@@ -392,7 +392,7 @@ def main():
         sub = group.iloc[:n].copy()
         sub["ddg_foldx"] = ddgs[:n]
         sub["ddg_diff_model_minus_foldx"] = sub["predicted_ddg"] - sub["ddg_foldx"]
-        sub["time_taken"] = time.time_ns() - start_t
+        sub["time_taken"] = (time.time_ns()-start_t)/10**9
         all_results.append(sub)
 
     if not all_results:

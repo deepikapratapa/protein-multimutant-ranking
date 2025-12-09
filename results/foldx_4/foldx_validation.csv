@@ -1,0 +1,2 @@
+protein_id,mutations,pretty_sites,num_mutations,predicted_ddg,method,ddg_foldx,ddg_diff_model_minus_foldx,time_taken
+1EY0A,1EY0A:128S>G;1EY0A:39V>G;1EY0A:94A>G,39V>G;94A>G;128S>G,3,-4.526857804232802,GA,0.379327,-4.906184804232802,186.207607
